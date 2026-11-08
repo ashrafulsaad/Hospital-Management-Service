@@ -1,0 +1,75 @@
+from django.urls import path
+
+from .views import (
+    AdminDoctorQueueView,
+    AdminHospitalListCreateView,
+    AdminReviewQueueView,
+    AdminVisitCreateView,
+    ConsentCollectionView,
+    ConsentRevokeView,
+    DoctorApplicationView,
+    DoctorApprovalView,
+    DoctorDirectoryView,
+    HospitalDirectoryView,
+    MedicalRecordCollectionView,
+    MedicalRecordCorrectionView,
+    MedicalRecordDetailView,
+    PatientDocumentCollectionView,
+    PatientDocumentDownloadView,
+    ReviewCollectionView,
+    ReviewModerationView,
+    ReviewReportCreateView,
+    VisitCloseView,
+    VisitListView,
+)
+
+urlpatterns = [
+    path("hospitals/", HospitalDirectoryView.as_view(), name="hospital-directory"),
+    path("doctors/", DoctorDirectoryView.as_view(), name="doctor-directory"),
+    path("doctors/apply/", DoctorApplicationView.as_view(), name="doctor-application"),
+    path("patients/consents/", ConsentCollectionView.as_view(), name="patient-consents"),
+    path(
+        "patients/consents/<int:pk>/revoke/",
+        ConsentRevokeView.as_view(),
+        name="consent-revoke",
+    ),
+    path("care/visits/", VisitListView.as_view(), name="visit-list"),
+    path("care/visits/<int:pk>/close/", VisitCloseView.as_view(), name="visit-close"),
+    path("care/records/", MedicalRecordCollectionView.as_view(), name="medical-records"),
+    path(
+        "care/records/<int:pk>/",
+        MedicalRecordDetailView.as_view(),
+        name="medical-record-detail",
+    ),
+    path(
+        "care/records/<int:pk>/correct/",
+        MedicalRecordCorrectionView.as_view(),
+        name="medical-record-correction",
+    ),
+    path("care/documents/", PatientDocumentCollectionView.as_view(), name="patient-documents"),
+    path(
+        "care/documents/<int:pk>/download/",
+        PatientDocumentDownloadView.as_view(),
+        name="patient-document-download",
+    ),
+    path("reviews/", ReviewCollectionView.as_view(), name="reviews"),
+    path(
+        "reviews/<int:pk>/report/",
+        ReviewReportCreateView.as_view(),
+        name="review-report",
+    ),
+    path("admin/hospitals/", AdminHospitalListCreateView.as_view(), name="admin-hospitals"),
+    path("admin/doctors/", AdminDoctorQueueView.as_view(), name="admin-doctor-queue"),
+    path(
+        "admin/doctors/<int:pk>/approve/",
+        DoctorApprovalView.as_view(),
+        name="doctor-approval",
+    ),
+    path("admin/visits/", AdminVisitCreateView.as_view(), name="admin-visits"),
+    path("admin/reviews/", AdminReviewQueueView.as_view(), name="admin-review-queue"),
+    path(
+        "admin/reviews/<int:pk>/moderate/",
+        ReviewModerationView.as_view(),
+        name="review-moderation",
+    ),
+]

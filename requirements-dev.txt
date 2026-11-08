@@ -1,0 +1,8 @@
+-r requirements.txt
+pytest
+pytest-django
+freezegun
+bandit
+pip-audit
+ruff
+pytest-cov

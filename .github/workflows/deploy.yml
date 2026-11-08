@@ -1,0 +1,83 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH host verification
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Deliver production secrets to the host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_ALLOWED_HOSTS: ${{ secrets.DJANGO_ALLOWED_HOSTS }}
+          DJANGO_CSRF_TRUSTED_ORIGINS: ${{ secrets.DJANGO_CSRF_TRUSTED_ORIGINS }}
+          FIELD_ENCRYPTION_KEY: ${{ secrets.FIELD_ENCRYPTION_KEY }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          eval "$(ssh-agent -s)"
+          printf '%s\n' "$DEPLOY_SSH_KEY" | ssh-add -
+          python3 - <<'PY' | ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'umask 077; base64 --decode > /opt/hospital-management-service/.env.tmp && chmod 600 /opt/hospital-management-service/.env.tmp && mv /opt/hospital-management-service/.env.tmp /opt/hospital-management-service/.env'
+          import base64
+          import os
+          import sys
+
+          values = {
+              "POSTGRES_DB": os.environ["POSTGRES_DB"],
+              "POSTGRES_USER": os.environ["POSTGRES_USER"],
+              "POSTGRES_PASSWORD": os.environ["POSTGRES_PASSWORD"],
+              "POSTGRES_HOST": "db",
+              "POSTGRES_PORT": "5432",
+              "DJANGO_SECRET_KEY": os.environ["DJANGO_SECRET_KEY"],
+              "DJANGO_DEBUG": "false",
+              "DJANGO_ALLOWED_HOSTS": os.environ["DJANGO_ALLOWED_HOSTS"],
+              "DJANGO_CSRF_TRUSTED_ORIGINS": os.environ["DJANGO_CSRF_TRUSTED_ORIGINS"],
+              "FIELD_ENCRYPTION_KEY": os.environ["FIELD_ENCRYPTION_KEY"],
+              "DJANGO_SETTINGS_MODULE": "config.settings.prod",
+              "LOG_LEVEL": "INFO",
+          }
+          if any(not value or "\n" in value or "\r" in value for value in values.values()):
+              sys.exit("Missing or invalid production secret/configuration value.")
+          content = "".join(f"{key}={value}\n" for key, value in values.items())
+          sys.stdout.buffer.write(base64.b64encode(content.encode()))
+          PY
+
+      - name: Deploy on the server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          eval "$(ssh-agent -s)"
+          printf '%s\n' "$DEPLOY_SSH_KEY" | ssh-add -
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd /opt/hospital-management-service && git fetch origin main && test \"\$(git rev-parse origin/main)\" = '$DEPLOY_SHA' && git merge --ff-only '$DEPLOY_SHA' && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait --wait-timeout 180"
+
+      - name: Smoke test deployed HTTPS endpoint
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: curl --fail --silent --show-error "https://${DEPLOY_HOST}/api/health/"

@@ -1,56 +1,120 @@
-name: Hospital CI
+name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: hospital_db
-          POSTGRES_USER: hospital_user
-          POSTGRES_PASSWORD: test_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U hospital_user -d hospital_db"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      POSTGRES_DB: hospital_db
-      POSTGRES_USER: hospital_user
-      POSTGRES_PASSWORD: test_password
-      POSTGRES_HOST: localhost
-
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create disposable CI environment
+        run: |
+          python3 - <<'PY'
+          import base64
+          import secrets
+          from pathlib import Path
+
+          values = {
+              "POSTGRES_DB": "hospital_services",
+              "POSTGRES_USER": "hospital_user",
+              "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
+              "POSTGRES_HOST": "db",
+              "POSTGRES_PORT": "5432",
+              "DJANGO_SECRET_KEY": secrets.token_urlsafe(64),
+              "DJANGO_DEBUG": "true",
+              "DJANGO_ALLOWED_HOSTS": "localhost,127.0.0.1,testserver",
+              "DJANGO_CSRF_TRUSTED_ORIGINS": "",
+              "FIELD_ENCRYPTION_KEY": base64.urlsafe_b64encode(
+                  secrets.token_bytes(32)
+              ).decode(),
+              "DJANGO_SETTINGS_MODULE": "config.settings.dev",
+          }
+          Path(".env").write_text(
+              "".join(f"{key}={value}\n" for key, value in values.items()),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Build and start stack
+        run: docker compose up -d --build --wait
+
+      - name: Check migrations are committed
+        run: docker compose exec -T web python manage.py makemigrations --check --dry-run
+
+      - name: Run tests and produce coverage report
+        run: >-
+          docker compose exec -T -e COVERAGE_FILE=/tmp/hospital-coverage web pytest -v
+          --cov=accounts --cov=audit --cov=care --cov=patients
+          --cov-report=term-missing --cov-report=xml:/tmp/coverage.xml
+
+      - name: Copy coverage report
+        if: success()
+        run: docker compose cp web:/tmp/coverage.xml ./coverage.xml
+
+      - name: Upload coverage report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: ignore
+
+      - name: Verify database backup and restore
+        run: ./scripts/test-db-backup-restore.sh
+
+      - name: Load sanity check
+        run: python3 scripts/load-sanity.py
+
+      - name: Django production deployment checks
+        run: >-
+          docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.prod
+          web python manage.py check --deploy --fail-level WARNING
+
+      - name: Validate OpenAPI schema
+        run: docker compose exec -T web python manage.py spectacular --validate --fail-on-warn
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
+      - name: Install scanners
+        run: pip install -r requirements-dev.txt
+      - name: Ruff (lint)
+        run: ruff check .
+      - name: Bandit (risky code patterns, medium severity and up)
+        run: bandit -r accounts config api patients care audit -ll
+      - name: pip-audit (vulnerable packages)
+        run: pip-audit -r requirements.txt
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Django checks
-        run: python manage.py check
-
-      - name: Run migrations
-        run: python manage.py migrate
-
-      - name: Run tests
-        run: pytest
-
-      - name: Build Docker image
-        run: docker build -t hospital-web .
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --build-arg REQUIREMENTS_FILE=requirements.txt --tag hospital-management-service:ci .
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: hospital-management-service:ci
+          format: table
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          exit-code: "1"

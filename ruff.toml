@@ -1,0 +1,8 @@
+extend-exclude = ["migrations"]
+
+[lint]
+extend-ignore = ["RUF012"]
+
+[lint.per-file-ignores]
+"*/admin.py" = ["F401"]
+"config/settings/*.py" = ["F403", "F405"]

@@ -1,0 +1,9 @@
+[Unit]
+Description=Restart unhealthy Hospital Management containers
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hospital-management-service
+ExecStart=/opt/hospital-management-service/scripts/health-restart.sh
