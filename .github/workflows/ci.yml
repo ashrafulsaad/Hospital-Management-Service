@@ -44,7 +44,7 @@ jobs:
       - name: Ruff (lint)
         run: ruff check .
       - name: Bandit (risky code patterns, medium severity and up)
-        run: bandit -r accounts config api -ll
+        run: bandit -r accounts config api patients -ll
       - name: pip-audit (vulnerable packages)
         run: pip-audit -r requirements.txt
 
