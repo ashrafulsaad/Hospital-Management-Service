@@ -4,6 +4,7 @@ from freezegun import freeze_time
 
 from accounts.crypto import encrypt
 from accounts.models import Role, User
+from care.models import DoctorProfile
 from tests.conftest import PASSWORD
 
 pytestmark = pytest.mark.django_db
@@ -31,6 +32,15 @@ def test_register_admin_role_rejected(api):
     )
     assert res.status_code == 400
     assert not User.objects.filter(email="evil@x.com").exists()
+
+
+def test_register_doctor_role_rejected(api):
+    res = api.post(
+        "/api/auth/register/",
+        {"email": "self-doctor@x.com", "password": PASSWORD, "role": "doctor"},
+    )
+    assert res.status_code == 400
+    assert not User.objects.filter(email="self-doctor@x.com").exists()
 
 
 def test_register_duplicate_email(api, make_user):
@@ -99,7 +109,14 @@ def test_patient_on_doctor_endpoint_is_403(api, login, make_user):
 
 
 def test_doctor_on_doctor_endpoint_is_200(api, login, make_user):
-    make_user(email="d@x.com", role=Role.DOCTOR)
+    doctor = make_user(email="d@x.com", role=Role.DOCTOR)
+    DoctorProfile.objects.create(
+        user=doctor,
+        full_name="Approved Doctor",
+        specialty="General",
+        license_number="LIC-TEST",
+        approved=True,
+    )
     _auth(api, login("d@x.com").data["access"])
     assert api.get("/api/auth/ping/doctor/").status_code == 200
 

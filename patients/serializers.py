@@ -1,6 +1,6 @@
 import re
-from datetime import date
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import PatientProfile
@@ -35,7 +35,7 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ("updated_at",)
 
     def validate_date_of_birth(self, value):
-        if value and value > date.today():
+        if value and value > timezone.localdate():
             raise serializers.ValidationError("Date of birth cannot be in the future.")
         return value
 

@@ -15,27 +15,26 @@ PENDING_MAX_AGE = 300  # seconds
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    # admin NOT allowed here: blocks privilege escalation
-    role = serializers.ChoiceField(
-        choices=[(Role.PATIENT, "Patient"), (Role.DOCTOR, "Doctor")],
-        default=Role.PATIENT,
-    )
 
     class Meta:
         model = User
-        fields = ("id", "email", "password", "role")
+        fields = ("id", "email", "password")
+
+    def create(self, validated_data):
+        return User.objects.create_user(**validated_data)
 
     def validate(self, attrs):
-        candidate = User(email=attrs["email"], role=attrs["role"])
+        requested_role = self.initial_data.get("role")
+        if requested_role not in (None, "", Role.PATIENT):
+            raise serializers.ValidationError(
+                {"role": "Doctor and admin roles cannot be assigned during registration."}
+            )
+        candidate = User(email=attrs["email"], role=Role.PATIENT)
         try:
             validate_password(attrs["password"], candidate)
         except DjangoValidationError as exc:
             raise serializers.ValidationError({"password": list(exc.messages)})
         return attrs
-
-    def create(self, validated_data):
-        return User.objects.create_user(**validated_data)
-
 
 class LoginSerializer(TokenObtainPairSerializer):
     @classmethod
