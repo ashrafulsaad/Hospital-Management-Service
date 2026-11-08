@@ -87,6 +87,29 @@ def test_successful_authenticated_protected_action_is_logged(client_for):
     assert entry.resource_id == "/api/auth/me/"
 
 
+def test_refresh_and_logout_actions_are_logged(api, login, make_user):
+    user = make_user("tokens@x.com")
+    refresh = login("tokens@x.com").data["refresh"]
+
+    refreshed = api.post("/api/auth/refresh/", {"refresh": refresh})
+    assert refreshed.status_code == 200
+    logged_out = api.post(
+        "/api/auth/logout/",
+        {"refresh": refreshed.data["refresh"]},
+    )
+    assert logged_out.status_code == 200
+    assert AuditLog.objects.filter(
+        action=AuditLog.Action.API_ACCESS,
+        actor=user,
+        resource_id="/api/auth/refresh/",
+    ).exists()
+    assert AuditLog.objects.filter(
+        action=AuditLog.Action.API_ACCESS,
+        actor=user,
+        resource_id="/api/auth/logout/",
+    ).exists()
+
+
 def test_patient_audit_feed_is_scoped_to_the_patient(client_for):
     patient_a, client_a = client_for("a@x.com")
     _, client_b = client_for("b@x.com")

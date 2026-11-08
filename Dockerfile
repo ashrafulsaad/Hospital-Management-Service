@@ -6,8 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+ARG REQUIREMENTS_FILE=requirements-dev.txt
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r "$REQUIREMENTS_FILE" \
     && addgroup --system app \
     && adduser --system --home /home/app --ingroup app app
 

@@ -36,6 +36,19 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"password": list(exc.messages)})
         return attrs
 
+
+class MeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ("id", "email", "role")
+        read_only_fields = fields
+
+
+class RolePingSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    role = serializers.ChoiceField(choices=Role.choices)
+
+
 class LoginSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):

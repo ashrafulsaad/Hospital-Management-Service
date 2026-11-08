@@ -167,6 +167,25 @@ class RecordContentSerializer(serializers.Serializer):
     content = serializers.CharField(min_length=1, max_length=20000, trim_whitespace=True)
 
 
+class EmptySerializer(serializers.Serializer):
+    pass
+
+
+class ApprovalResultSerializer(serializers.Serializer):
+    status = serializers.CharField()
+
+
+class RecordCorrectionResultSerializer(serializers.Serializer):
+    version = serializers.IntegerField()
+    content = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
+
+class ReviewModerationResultSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    status = serializers.ChoiceField(choices=Review.Status.choices)
+
+
 class RecordCreateSerializer(RecordContentSerializer):
     visit = serializers.PrimaryKeyRelatedField(queryset=Visit.objects.select_related("patient"))
 
@@ -217,8 +236,8 @@ class PatientDocumentMetadataSerializer(serializers.ModelSerializer):
 class ReviewCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Review
-        fields = ("visit", "rating", "text", "status")
-        read_only_fields = ("status",)
+        fields = ("id", "visit", "rating", "text", "status")
+        read_only_fields = ("id", "status")
 
     def validate_rating(self, value):
         if value < 1 or value > 5:

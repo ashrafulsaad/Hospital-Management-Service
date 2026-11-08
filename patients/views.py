@@ -3,6 +3,7 @@ from rest_framework import generics
 from rest_framework.response import Response
 
 from accounts.permissions import IsPatient
+from audit.mixins import AuditProtectedRequestMixin
 from audit.models import AuditLog
 from audit.services import log_action
 
@@ -10,7 +11,7 @@ from .models import PatientProfile
 from .serializers import PatientProfileSerializer
 
 
-class MyProfileView(generics.RetrieveUpdateAPIView):
+class MyProfileView(AuditProtectedRequestMixin, generics.RetrieveUpdateAPIView):
     """The logged-in patient's own profile. No id in the URL, by design."""
 
     serializer_class = PatientProfileSerializer

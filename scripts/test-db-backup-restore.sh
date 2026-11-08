@@ -7,13 +7,20 @@ restore_db="restore_check_${timestamp}_$$"
 created_db=0
 
 cleanup() {
+    exit_status=$?
+    cleanup_status=0
+    trap - EXIT HUP INT TERM
     if [ "$created_db" -eq 1 ]; then
         docker compose exec -T db sh -c \
-            'dropdb -U "$POSTGRES_USER" "$1"' sh "$restore_db" >/dev/null 2>&1 || true
+            'dropdb -U "$POSTGRES_USER" "$1"' sh "$restore_db" || cleanup_status=$?
     fi
     rm -f "$backup_file"
+    if [ "$exit_status" -eq 0 ] && [ "$cleanup_status" -ne 0 ]; then
+        exit "$cleanup_status"
+    fi
+    exit "$exit_status"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
 
 docker compose exec -T db sh -c \
     'pg_dump -U "$POSTGRES_USER" --format=custom --no-owner --no-acl "$POSTGRES_DB"' > "$backup_file"

@@ -24,7 +24,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY",
-    "unsafe-development-only-set-a-secret-in-env",
+    "unsafe-dev-only-set-DJANGO_SECRET_KEY-before-deploy-1234567890",
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
@@ -164,8 +164,8 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 11 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 
 LOGGING = {
     "version": 1,
@@ -194,4 +194,16 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'Hospital Management API',
     'DESCRIPTION': 'Hospital Management System API',
     'VERSION': '1.0.0',
+    "ENUM_NAME_OVERRIDES": {
+        "VisitStatusEnum": [
+            ("scheduled", "Scheduled"),
+            ("open", "Open"),
+            ("closed", "Closed"),
+        ],
+        "ReviewStatusEnum": [
+            ("pending", "Pending"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+        ],
+    },
 }

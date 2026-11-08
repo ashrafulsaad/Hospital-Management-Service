@@ -4,13 +4,14 @@ from django.db.models import Avg, Count, Prefetch, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
-from rest_framework.views import APIView
 
 from accounts.models import Role, User
 from accounts.permissions import IsAdminRole, IsPatient
@@ -33,11 +34,13 @@ from .models import (
 from .permissions import IsApprovedDoctor, IsPatientOrApprovedDoctor
 from .serializers import (
     AdminVisitCreateSerializer,
+    ApprovalResultSerializer,
     ConsentGrantSerializer,
     DoctorApplicationQueueSerializer,
     DoctorApplicationSerializer,
     DoctorDirectorySerializer,
     DoctorSearchSerializer,
+    EmptySerializer,
     HospitalSearchSerializer,
     HospitalSerializer,
     MedicalRecordSerializer,
@@ -45,8 +48,10 @@ from .serializers import (
     PatientDocumentUploadSerializer,
     PublicReviewSerializer,
     RecordContentSerializer,
+    RecordCorrectionResultSerializer,
     RecordCreateSerializer,
     ReviewCreateSerializer,
+    ReviewModerationResultSerializer,
     ReviewModerationSerializer,
     ReviewQueueSerializer,
     ReviewReportSerializer,
@@ -150,7 +155,8 @@ class ConsentCollectionView(AuditProtectedRequestMixin, generics.ListCreateAPIVi
         )
 
 
-class ConsentRevokeView(AuditProtectedRequestMixin, APIView):
+class ConsentRevokeView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = EmptySerializer
     permission_classes = [IsPatient]
 
     @transaction.atomic
@@ -203,9 +209,11 @@ class VisitListView(AuditProtectedRequestMixin, generics.ListAPIView):
         return queryset.filter(doctor=self.request.user, patient_id__in=permitted_ids)
 
 
-class VisitCloseView(AuditProtectedRequestMixin, APIView):
+class VisitCloseView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = VisitSerializer
     permission_classes = [IsApprovedDoctor]
 
+    @extend_schema(request=EmptySerializer, responses=VisitSerializer)
     @transaction.atomic
     def post(self, request, pk):
         visit = get_object_or_404(
@@ -225,9 +233,16 @@ class VisitCloseView(AuditProtectedRequestMixin, APIView):
         return Response(VisitSerializer(visit).data)
 
 
-class MedicalRecordCollectionView(AuditProtectedRequestMixin, APIView):
+class MedicalRecordCollectionView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = MedicalRecordSerializer
     permission_classes = [IsPatientOrApprovedDoctor]
 
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return RecordCreateSerializer
+        return MedicalRecordSerializer
+
+    @extend_schema(operation_id="care_records_list")
     def get(self, request):
         queryset = MedicalRecord.objects.select_related(
             "visit",
@@ -257,6 +272,7 @@ class MedicalRecordCollectionView(AuditProtectedRequestMixin, APIView):
             )
         return Response(MedicalRecordSerializer(queryset, many=True).data)
 
+    @extend_schema(operation_id="care_records_create")
     def post(self, request):
         if not is_approved_doctor(request.user):
             raise PermissionDenied("Only approved doctors can create medical records.")
@@ -282,9 +298,11 @@ class MedicalRecordCollectionView(AuditProtectedRequestMixin, APIView):
         )
 
 
-class MedicalRecordDetailView(AuditProtectedRequestMixin, APIView):
+class MedicalRecordDetailView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = MedicalRecordSerializer
     permission_classes = [IsPatientOrApprovedDoctor]
 
+    @extend_schema(operation_id="care_records_retrieve")
     def get(self, request, pk):
         record = get_object_or_404(
             MedicalRecord.objects.select_related(
@@ -310,9 +328,14 @@ class MedicalRecordDetailView(AuditProtectedRequestMixin, APIView):
         return Response(MedicalRecordSerializer(record).data)
 
 
-class MedicalRecordCorrectionView(AuditProtectedRequestMixin, APIView):
+class MedicalRecordCorrectionView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = RecordContentSerializer
     permission_classes = [IsApprovedDoctor]
 
+    @extend_schema(
+        request=RecordContentSerializer,
+        responses=RecordCorrectionResultSerializer,
+    )
     def post(self, request, pk):
         serializer = RecordContentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -330,17 +353,28 @@ class MedicalRecordCorrectionView(AuditProtectedRequestMixin, APIView):
             fields=("version",),
         )
         return Response(
-            {
+            RecordCorrectionResultSerializer(
+                {
                 "version": version.version,
                 "content": version.content,
                 "created_at": version.created_at,
-            },
+                },
+            ).data,
             status=status.HTTP_201_CREATED,
         )
 
 
-class PatientDocumentCollectionView(AuditProtectedRequestMixin, APIView):
+class PatientDocumentCollectionView(
+    AuditProtectedRequestMixin,
+    generics.GenericAPIView,
+):
+    serializer_class = PatientDocumentMetadataSerializer
     permission_classes = [IsPatientOrApprovedDoctor]
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return PatientDocumentUploadSerializer
+        return PatientDocumentMetadataSerializer
 
     def get(self, request):
         queryset = PatientDocument.objects.select_related(
@@ -393,9 +427,11 @@ class PatientDocumentCollectionView(AuditProtectedRequestMixin, APIView):
         )
 
 
-class PatientDocumentDownloadView(AuditProtectedRequestMixin, APIView):
+class PatientDocumentDownloadView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = PatientDocumentMetadataSerializer
     permission_classes = [IsPatientOrApprovedDoctor]
 
+    @extend_schema(responses=OpenApiTypes.BINARY)
     def get(self, request, pk):
         document = get_object_or_404(
             PatientDocument.objects.select_related("visit", "visit__patient"),
@@ -499,9 +535,11 @@ class AdminDoctorQueueView(AuditProtectedRequestMixin, generics.ListAPIView):
     queryset = DoctorProfile.objects.filter(approved=False).select_related("user", "hospital")
 
 
-class DoctorApprovalView(AuditProtectedRequestMixin, APIView):
+class DoctorApprovalView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = ApprovalResultSerializer
     permission_classes = [IsAdminRole]
 
+    @extend_schema(request=EmptySerializer, responses=ApprovalResultSerializer)
     @transaction.atomic
     def post(self, request, pk):
         profile = get_object_or_404(
@@ -537,9 +575,11 @@ class AdminReviewQueueView(AuditProtectedRequestMixin, generics.ListAPIView):
     )
 
 
-class ReviewModerationView(AuditProtectedRequestMixin, APIView):
+class ReviewModerationView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = ReviewModerationSerializer
     permission_classes = [IsAdminRole]
 
+    @extend_schema(responses=ReviewModerationResultSerializer)
     @transaction.atomic
     def patch(self, request, pk):
         review = get_object_or_404(

@@ -1,10 +1,17 @@
 from django.db import DatabaseError, connection
+from rest_framework import serializers
+from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 
-class HealthView(APIView):
+class HealthSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    database = serializers.CharField()
+
+
+class HealthView(GenericAPIView):
+    serializer_class = HealthSerializer
     permission_classes = [AllowAny]
     authentication_classes = []
 
@@ -15,7 +22,11 @@ class HealthView(APIView):
                 cursor.fetchone()
         except DatabaseError:
             return Response(
-                {"status": "unhealthy", "database": "disconnected"},
+                self.get_serializer(
+                    {"status": "unhealthy", "database": "disconnected"},
+                ).data,
                 status=503,
             )
-        return Response({"status": "ok", "database": "connected"})
+        return Response(
+            self.get_serializer({"status": "ok", "database": "connected"}).data,
+        )

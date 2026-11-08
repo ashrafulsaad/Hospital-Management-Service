@@ -153,7 +153,32 @@ def test_doctor_application_stays_unapproved_until_admin_approval(
 
 def test_unapproved_doctor_is_blocked_from_doctor_workspace(make_user):
     doctor = make_user("pending@care.test", role=Role.DOCTOR)
-    assert _client_for_user(doctor).get("/api/auth/ping/doctor/").status_code == 403
+    client = _client_for_user(doctor)
+    workspace_routes = (
+        "/api/auth/ping/doctor/",
+        "/api/care/visits/",
+        "/api/care/records/",
+        "/api/care/documents/",
+        "/api/audit/my-logs/",
+    )
+    for route in workspace_routes:
+        assert client.get(route).status_code == 403
+
+
+def test_doctor_record_access_requires_active_consent(care_context):
+    patient, doctor, visit = care_context
+    record, _ = create_record(visit, doctor, "Confidential note")
+    grant = ConsentGrant.objects.get(patient=patient)
+    ConsentRevocation.objects.create(grant=grant)
+
+    doctor_client = _client_for_user(doctor)
+    assert doctor_client.get("/api/care/records/").data == []
+    assert doctor_client.get(f"/api/care/records/{record.pk}/").status_code == 403
+    assert doctor_client.post(
+        f"/api/care/records/{record.pk}/correct/",
+        {"content": "Attempted correction"},
+        format="json",
+    ).status_code == 403
 
 
 def test_patient_reads_only_own_record(care_context, make_user, hospital):

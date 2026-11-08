@@ -49,13 +49,13 @@ jobs:
 
       - name: Run tests and produce coverage report
         run: >-
-          docker compose exec -T web pytest -v
+          docker compose exec -T -e COVERAGE_FILE=/tmp/hospital-coverage web pytest -v
           --cov=accounts --cov=audit --cov=care --cov=patients
-          --cov-report=term-missing --cov-report=xml:coverage.xml
+          --cov-report=term-missing --cov-report=xml:/tmp/coverage.xml
 
       - name: Copy coverage report
         if: success()
-        run: docker compose cp web:/app/coverage.xml ./coverage.xml
+        run: docker compose cp web:/tmp/coverage.xml ./coverage.xml
 
       - name: Upload coverage report
         if: success()
@@ -74,7 +74,10 @@ jobs:
       - name: Django production deployment checks
         run: >-
           docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.prod
-          web python manage.py check --deploy
+          web python manage.py check --deploy --fail-level WARNING
+
+      - name: Validate OpenAPI schema
+        run: docker compose exec -T web python manage.py spectacular --validate --fail-on-warn
 
       - name: Show logs on failure
         if: failure()
@@ -92,7 +95,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install scanners
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Ruff (lint)
         run: ruff check .
       - name: Bandit (risky code patterns, medium severity and up)
@@ -105,7 +108,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build production image
-        run: docker build --tag hospital-management-service:ci .
+        run: docker build --build-arg REQUIREMENTS_FILE=requirements.txt --tag hospital-management-service:ci .
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@0.28.0
         with:

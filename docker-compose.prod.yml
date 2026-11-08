@@ -1,4 +1,10 @@
 services:
+  web:
+    build:
+      context: .
+      args:
+        REQUIREMENTS_FILE: requirements.txt
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped

@@ -1,7 +1,6 @@
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.state import token_backend
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -16,7 +15,13 @@ from audit.models import AuditLog
 from audit.services import log_action
 
 from .models import Role, User
-from .serializers import Admin2FASerializer, LoginSerializer, RegisterSerializer
+from .serializers import (
+    Admin2FASerializer,
+    LoginSerializer,
+    MeSerializer,
+    RegisterSerializer,
+    RolePingSerializer,
+)
 
 
 class RegisterView(AuditProtectedRequestMixin, generics.CreateAPIView):
@@ -98,19 +103,23 @@ class Admin2FAView(AuditProtectedRequestMixin, generics.GenericAPIView):
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 
-class MeView(AuditProtectedRequestMixin, APIView):
+class MeView(AuditProtectedRequestMixin, generics.GenericAPIView):
+    serializer_class = MeSerializer
+
     def get(self, request):
-        u = request.user
-        return Response({"id": u.id, "email": u.email, "role": u.role})
+        return Response(self.get_serializer(request.user).data)
 
 
-class RolePingView(AuditProtectedRequestMixin, APIView):
+class RolePingView(AuditProtectedRequestMixin, generics.GenericAPIView):
     """Temporary: proves role permissions. Delete in a later chunk."""
 
+    serializer_class = RolePingSerializer
     role_permission = None
 
     def get_permissions(self):
         return [self.role_permission()]
 
     def get(self, request):
-        return Response({"ok": True, "role": request.user.role})
+        return Response(
+            self.get_serializer({"ok": True, "role": request.user.role}).data,
+        )
