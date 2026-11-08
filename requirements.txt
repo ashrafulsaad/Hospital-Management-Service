@@ -1,5 +1,11 @@
-djangorestframework
+djangorestframework-simplejwt
+pyotp
+cryptography
 drf-spectacular
-psycopg[binary]
 pytest
 pytest-django
+freezegun
+bandit
+pip-audit
+psycopg[binary]
+ruff
